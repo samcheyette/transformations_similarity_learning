@@ -35,7 +35,6 @@ def get_entropy(d):
         norm_prior = norm_prior.sum()
 
         ents[k] = norm_prior
-
     return ents
 
 def analyze_sim_ent(ent, sim):
@@ -51,8 +50,26 @@ def analyze_sim_ent(ent, sim):
     ents_lst = np.concatenate(ents_lst)
     sim_lst = np.concatenate(sim_lst)
 
-    return st.pearsonr(ents_lst, sim_lst)
+    return ents_lst, sim_lst
 
+def get_ll(mu,sigma,sim):
+    #mu_var = mu+np.random.normal(0.0,sigma,size=len(mu))
+
+    log_ps= st.norm.logpdf(mu,sim,sigma)
+    #log_ps = np.log(ps)
+    sum_ll = np.sum(log_ps)
+    return sum_ll
+
+def sample_alpha(a):
+    a = np.random.normal(a,0.1)
+    #a = max(min(5.,a),1.)
+    return a
+
+def sample_beta(b):
+    return np.random.normal(b, 0.1)
+
+def sample_sigma(s):
+    return np.random.normal(s, 0.1)
 
 def main(prior_data, sim_data, gram_data,n_type):
 
@@ -62,8 +79,9 @@ def main(prior_data, sim_data, gram_data,n_type):
 
 
     #random initialization
+
+
     gram_probs = []
-    max_pears_r = 1e-5
     for n in n_type:
         l = np.random.rand(n)
         l = l/np.sum(l)
@@ -71,20 +89,39 @@ def main(prior_data, sim_data, gram_data,n_type):
 
     probs_max = copy.deepcopy(gram_probs)
 
+    alpha_max = 3.
+    beta_max = 0.
+    sigma_max = 1.
+
+
+    max_ll= None
+
     for _ in xrange(NSAMP):
+
+
+        alpha = sample_alpha(alpha_max)
+        sigma = sample_sigma(sigma_max)
+
+        #alpha = 2.54
+        #sigma = 1.0
+        #beta = 0.
+        beta = sample_beta(beta_max)
 
         dct_gram = defaultdict(list)
         dct_probs = defaultdict(list)
 
+
         new_gp = []
         for g in probs_max:
             brk = False
-            new_p = np.random.dirichlet(g) + 0.01
-
+            #new_p = g + np.exp(np.random.normal(np.log(g),0.1))
+            new_p = np.random.dirichlet(g+1.0)
+            #new_p = new_p/np.sum(new_p)
 
             new_gp.append(new_p)
         gram_probs = copy.deepcopy(new_gp)
 
+        #gram_probs =probs_max
 
         for k in gram_data:
             tmp_probs = []
@@ -108,11 +145,8 @@ def main(prior_data, sim_data, gram_data,n_type):
                     tmp.append(prob)
                     tmp_prob += np.sum(prob)
 
-                    #tmp.append(np.array(lst_part)/float(t))
+
                 tmp_probs.append(tmp_prob)
-                #tmp = [item for sublist in tmp for item in sublist]
-                #print tmp
-                #sprint list(tmp), sum(tmp)
 
             dct_probs[k] = copy.deepcopy(tmp_probs)
 
@@ -146,15 +180,50 @@ def main(prior_data, sim_data, gram_data,n_type):
         #print prior_ent
         entr = get_entropy(dct_probs)
 
-        pears_r = analyze_sim_ent(entr, sim)[0]
+        dat_to_list = analyze_sim_ent(entr, sim)
 
-        ratio = (pears_r/max_pears_r)**5
-        if random.random() < 0.05 * ratio:
+        ent_lst = dat_to_list[0]
+        ent_lst = (ent_lst - np.mean(ent_lst))/np.std(ent_lst)
+        sim_lst = dat_to_list[1]
+
+        mu = alpha + beta * ent_lst
+
+        ll = get_ll(mu,sigma,sim_lst)
+
+        #beta = get_sse(mu, sigma, sim)
+        #pears_r = st.pearsonr(dat_to_lists[0], dat_to_lists[1])
+
+        """
+
+        ratio = (pears_r/max_pears_r)**2
+        if ratio > 1 or random.random() < ratio*0.05:
             max_pears_r =pears_r
             probs_max = copy.deepcopy(gram_probs)
 
-        print max_pears_r
+        """
+        #print alpha, beta, sigma
+        #print alpha_max, beta_max, sigma_max
+        #print mu
+        print max_ll
+        print alpha_max
+        print beta_max
+        print sigma_max
 
+        print
+        log_rand = np.log(random.random())
+        if max_ll == None:
+            ratio = None
+        else:
+            ratio = ll - max_ll
+        if ((ratio == None) or (ratio > 0) or 
+            (log_rand < ratio)) :
+            max_ll = ll
+            probs_max = copy.deepcopy(gram_probs)
+            beta_max = beta
+            alpha_max = alpha
+            sigma_max = sigma
+
+        
 if __name__ == "__main__":
     NSAMP = 5000
 
